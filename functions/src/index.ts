@@ -28,7 +28,7 @@ initializeApp();
 // [END import]
 
 export const calmMeDown = onRequest(
-  {secrets: ["ANTHROPIC_API_KEY"]},
+  {secrets: ["ANTHROPIC_API_KEY"], cors: true},
   async (req, res) => {
     const anthropicClient = new Anthropic();
 
