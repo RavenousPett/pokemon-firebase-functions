@@ -32,7 +32,7 @@ export const calmMeDown = onRequest(
   async (req, res) => {
     const anthropicClient = new Anthropic();
 
-    const userInputText = String(req.query.userInputText || "");
+    const userInputText = String(req.body?.userInputText || "");
 
     const artificialInteligenceResponseMessage =
       await anthropicClient.messages.create({
