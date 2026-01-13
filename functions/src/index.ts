@@ -18,15 +18,15 @@
 import {onRequest} from "firebase-functions/v2/https";
 import Anthropic from "@anthropic-ai/sdk";
 import {initializeApp} from "firebase-admin/app";
+import {getDataConnect} from "firebase-admin/data-connect";
 
-initializeApp();
+const app = initializeApp();
 
-// Data Connect GraphQL endpoint
-// Use emulator in development, production endpoint otherwise
-const DATA_CONNECT_URL =
-  process.env.DATA_CONNECT_URL ||
-  "https://us-east4-pokemon-football.dataconnect.firebase.googleapis.com" +
-  "/graphql";
+// Initialize Data Connect with your service config
+const dataConnect = getDataConnect({
+  serviceId: "pokemon-football",
+  location: "us-east4",
+}, app);
 
 // Tool definitions for Claude
 const tools: Anthropic.Tool[] = [
@@ -61,7 +61,7 @@ const tools: Anthropic.Tool[] = [
 ];
 
 /**
- * Makes a GraphQL query to Firebase Data Connect.
+ * Makes a GraphQL query to Firebase Data Connect using Admin SDK.
  * @param {string} query - The GraphQL query string.
  * @param {Record<string, unknown>} variables - Query variables.
  * @return {Promise<unknown>} The query result.
@@ -70,12 +70,11 @@ async function queryDataConnect(
   query: string,
   variables: Record<string, unknown> = {}
 ): Promise<unknown> {
-  const response = await fetch(DATA_CONNECT_URL, {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({query, variables}),
+  const result = await dataConnect.executeGraphql(query, {
+    variables,
+    operationName: undefined,
   });
-  return response.json();
+  return result.data;
 }
 
 /**
@@ -213,9 +212,11 @@ export const calmMeDown = onRequest(
       res.set("Content-Type", "text/plain");
       res.send(responseText);
     } catch (error) {
-      console.error("Error calling Claude:", error);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const errStack = error instanceof Error ? error.stack : "";
+      console.error("Error calling Claude:", errMsg, errStack);
       res.status(500).set("Content-Type", "text/plain");
-      res.send("Sorry, something went wrong. Please try again.");
+      res.send(`Error: ${errMsg}`);
     }
   }
 );
