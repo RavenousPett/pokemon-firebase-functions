@@ -25,15 +25,17 @@ initializeApp();
 // Use emulator in development, production endpoint otherwise
 const DATA_CONNECT_URL =
   process.env.DATA_CONNECT_URL ||
-  "https://us-east4-pokemon-football.dataconnect.firebase.googleapis.com/graphql";
+  "https://us-east4-pokemon-football.dataconnect.firebase.googleapis.com" +
+  "/graphql";
 
 // Tool definitions for Claude
 const tools: Anthropic.Tool[] = [
   {
     name: "list_matches",
     description:
-      "Get all Pokemon football matches with their goals and throw-ins counts. " +
-      "Use this to see all matches or get an overview of match statistics.",
+      "Get all Pokemon football matches with their goals and " +
+      "throw-ins counts. Use this to see all matches or get an " +
+      "overview of match statistics.",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -58,7 +60,12 @@ const tools: Anthropic.Tool[] = [
   },
 ];
 
-// GraphQL query helper
+/**
+ * Makes a GraphQL query to Firebase Data Connect.
+ * @param {string} query - The GraphQL query string.
+ * @param {Record<string, unknown>} variables - Query variables.
+ * @return {Promise<unknown>} The query result.
+ */
 async function queryDataConnect(
   query: string,
   variables: Record<string, unknown> = {}
@@ -71,7 +78,12 @@ async function queryDataConnect(
   return response.json();
 }
 
-// Handle tool calls
+/**
+ * Handles a tool call from Claude by executing the appropriate query.
+ * @param {string} toolName - The name of the tool to execute.
+ * @param {Record<string, unknown>} toolInput - The tool input parameters.
+ * @return {Promise<unknown>} The tool execution result.
+ */
 async function handleToolCall(
   toolName: string,
   toolInput: Record<string, unknown>
@@ -113,7 +125,19 @@ async function handleToolCall(
   }
 }
 
-// Main function to call Claude with tools
+const SYSTEM_PROMPT =
+  "You are a helpful assistant for a Pokemon Football app " +
+  "called 'Grass vs Electric Derby'. You can query the database to " +
+  "answer questions about matches, players, goals, and throw-ins. " +
+  "When users ask about match data, use the available tools to fetch " +
+  "real information. Be friendly and informative in your responses.";
+
+/**
+ * Calls Claude with tools and handles the agentic loop.
+ * @param {Anthropic} anthropicClient - The Anthropic client instance.
+ * @param {string} userMessage - The user's message.
+ * @return {Promise<string>} Claude's final text response.
+ */
 async function callClaudeWithTools(
   anthropicClient: Anthropic,
   userMessage: string
@@ -123,15 +147,12 @@ async function callClaudeWithTools(
   ];
 
   // Agentic loop - keep processing until Claude is done
-  while (true) {
+  let continueLoop = true;
+  while (continueLoop) {
     const response = await anthropicClient.messages.create({
       model: "claude-sonnet-4-5-20250929",
       max_tokens: 1024,
-      system:
-        "You are a helpful assistant for a Pokemon Football app called 'Grass vs Electric Derby'. " +
-        "You can query the database to answer questions about matches, players, goals, and throw-ins. " +
-        "When users ask about match data, use the available tools to fetch real information. " +
-        "Be friendly and informative in your responses.",
+      system: SYSTEM_PROMPT,
       tools,
       messages,
     });
@@ -164,9 +185,11 @@ async function callClaudeWithTools(
       const textBlock = response.content.find(
         (block): block is Anthropic.TextBlock => block.type === "text"
       );
+      continueLoop = false;
       return textBlock?.text || "No response generated.";
     }
   }
+  return "No response generated.";
 }
 
 export const calmMeDown = onRequest(
