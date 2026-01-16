@@ -129,7 +129,11 @@ const SYSTEM_PROMPT =
   "called 'Grass vs Electric Derby'. You can query the database to " +
   "answer questions about matches, players, goals, and throw-ins. " +
   "When users ask about match data, use the available tools to fetch " +
-  "real information. Be friendly and informative in your responses.";
+  "real information. Be friendly and informative in your responses." +
+  "\n\nIMPORTANT CONTEXT: The current match ID is " +
+  "bb785dd0-a9b2-48fb-bd01-f9b8c6eaa0a9. " +
+  "When the user asks about 'the match', 'this match', 'current match', " +
+  "or similar, use this ID without asking for clarification.";
 
 /**
  * Calls Claude with tools and handles the agentic loop.
