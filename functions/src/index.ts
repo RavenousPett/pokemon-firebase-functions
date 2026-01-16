@@ -109,10 +109,12 @@ async function handleToolCall(
             name
             goals
             throwIns
-            players_on_match {
-              id
-              name
-              pokemonType
+            matchPlayers_on_match {
+              player {
+                id
+                name
+                pokemonType
+              }
             }
           }
         }
