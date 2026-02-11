@@ -17,6 +17,7 @@
 
 import {onRequest} from "firebase-functions/v2/https";
 import Anthropic from "@anthropic-ai/sdk";
+import {Response} from "express";
 import {initializeApp} from "firebase-admin/app";
 import {getDataConnect} from "firebase-admin/data-connect";
 
@@ -139,14 +140,17 @@ const SYSTEM_PROMPT =
 
 /**
  * Calls Claude with tools and handles the agentic loop.
+ * Streams text deltas directly to the HTTP response.
  * @param {Anthropic} anthropicClient - The Anthropic client instance.
  * @param {string} userMessage - The user's message.
- * @return {Promise<string>} Claude's final text response.
+ * @param {Response} res - Express response to stream text into.
+ * @return {Promise<void>}
  */
 async function callClaudeWithTools(
   anthropicClient: Anthropic,
-  userMessage: string
-): Promise<string> {
+  userMessage: string,
+  res: Response
+): Promise<void> {
   const messages: Anthropic.MessageParam[] = [
     {role: "user", content: userMessage},
   ];
@@ -154,13 +158,20 @@ async function callClaudeWithTools(
   // Agentic loop - keep processing until Claude is done
   let continueLoop = true;
   while (continueLoop) {
-    const response = await anthropicClient.messages.create({
+    const stream = anthropicClient.messages.stream({
       model: "claude-sonnet-4-5-20250929",
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
       tools,
       messages,
     });
+
+    // Stream text deltas to the client as they arrive
+    stream.on("text", (delta) => {
+      res.write(delta);
+    });
+
+    const response = await stream.finalMessage();
 
     // Check if Claude wants to use tools
     if (response.stop_reason === "tool_use") {
@@ -186,15 +197,10 @@ async function callClaudeWithTools(
       messages.push({role: "assistant", content: response.content});
       messages.push({role: "user", content: toolResults});
     } else {
-      // Claude is done - extract text response
-      const textBlock = response.content.find(
-        (block): block is Anthropic.TextBlock => block.type === "text"
-      );
+      // Claude is done - streaming already happened via the text event
       continueLoop = false;
-      return textBlock?.text || "No response generated.";
     }
   }
-  return "No response generated.";
 }
 
 export const calmMeDown = onRequest(
@@ -210,19 +216,26 @@ export const calmMeDown = onRequest(
     }
 
     try {
-      const responseText = await callClaudeWithTools(
-        anthropicClient,
-        userInputText
-      );
+      // Set streaming headers before writing any chunks
+      res.set({
+        "Content-Type": "text/plain; charset=utf-8",
+        "Transfer-Encoding": "chunked",
+        "Cache-Control": "no-cache",
+        "X-Content-Type-Options": "nosniff",
+      });
 
-      res.set("Content-Type", "text/plain");
-      res.send(responseText);
+      await callClaudeWithTools(anthropicClient, userInputText, res);
+      res.end();
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
       const errStack = error instanceof Error ? error.stack : "";
       console.error("Error calling Claude:", errMsg, errStack);
-      res.status(500).set("Content-Type", "text/plain");
-      res.send(`Error: ${errMsg}`);
+      if (res.headersSent) {
+        res.end();
+      } else {
+        res.status(500).set("Content-Type", "text/plain");
+        res.send(`Error: ${errMsg}`);
+      }
     }
   }
 );
