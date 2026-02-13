@@ -32,11 +32,24 @@ const dataConnect = getDataConnect({
 // Tool definitions for Claude
 const tools: Anthropic.Tool[] = [
   {
+    name: "get_all_match_data",
+    description:
+      "Get ALL matches with full detail including squad appearances " +
+      "and match events. This is the most comprehensive query — use it " +
+      "when you need to analyse patterns across matches, find top scorers, " +
+      "compare formations, or answer broad questions about the team.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
     name: "list_matches",
     description:
-      "Get all Pokemon football matches with their goals and " +
-      "throw-ins counts. Use this to see all matches or get an " +
-      "overview of match statistics.",
+      "Get a quick overview of all matches with scores, results, " +
+      "formations, and venues. Does NOT include events or squad details. " +
+      "Use for a summary view.",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -46,8 +59,8 @@ const tools: Anthropic.Tool[] = [
   {
     name: "get_match",
     description:
-      "Get details of a specific match including all players. " +
-      "Use this when you need information about a particular match by its ID.",
+      "Get full detail for a specific match including squad " +
+      "appearances and all match events in minute order.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -57,6 +70,66 @@ const tools: Anthropic.Tool[] = [
         },
       },
       required: ["id"],
+    },
+  },
+  {
+    name: "list_players",
+    description:
+      "Get all players in the squad with their jersey number, " +
+      "position, and Pokemon type.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "get_player",
+    description:
+      "Get a specific player's full profile including all their " +
+      "match appearances and events across all matches.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        id: {
+          type: "string",
+          description: "The player UUID",
+        },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "get_events_by_type",
+    description:
+      "Get all match events of a specific type across all matches. " +
+      "Valid types: GOAL_SCORED, GOAL_CONCEDED, THROW_IN, CORNER_TAKEN, " +
+      "CORNER_CONCEDED, YELLOW_CARD, RED_CARD, FOUL_COMMITTED, " +
+      "FOUL_SUFFERED, SUBSTITUTION_ON, SUBSTITUTION_OFF.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        eventType: {
+          type: "string",
+          description: "The event type enum value",
+        },
+      },
+      required: ["eventType"],
+    },
+  },
+  {
+    name: "get_player_events",
+    description:
+      "Get all match events for a specific player across all matches.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        playerId: {
+          type: "string",
+          description: "The player UUID",
+        },
+      },
+      required: ["playerId"],
     },
   },
 ];
@@ -89,15 +162,32 @@ async function handleToolCall(
   toolInput: Record<string, unknown>
 ): Promise<unknown> {
   switch (toolName) {
+  case "get_all_match_data":
+    return queryDataConnect(`
+        query GetAllMatchData {
+          matches(orderBy: { date: DESC }) {
+            id date kickoffTime opposition venueName venueCity
+            isHome formation goalsScored goalsConceded result
+            halfTimeGoalsScored halfTimeGoalsConceded notes
+            matchAppearances_on_match {
+              isStarter minutesPlayed
+              player { id name jerseyNumber position pokemonType }
+            }
+            matchEvents_on_match(orderBy: { minute: ASC }) {
+              id eventType minute note
+              player { id name }
+              secondaryPlayer { id name }
+            }
+          }
+        }
+      `);
   case "list_matches":
     return queryDataConnect(`
         query ListMatches {
-          matches(orderBy: { createdAt: DESC }) {
-            id
-            name
-            goals
-            throwIns
-            createdAt
+          matches(orderBy: { date: DESC }) {
+            id date kickoffTime opposition venueName venueCity
+            isHome formation goalsScored goalsConceded result
+            halfTimeGoalsScored halfTimeGoalsConceded notes
           }
         }
       `);
@@ -106,21 +196,82 @@ async function handleToolCall(
       `
         query GetMatch($id: UUID!) {
           match(id: $id) {
-            id
-            name
-            goals
-            throwIns
-            matchPlayers_on_match {
-              player {
-                id
-                name
-                pokemonType
-              }
+            id date kickoffTime opposition venueName venueCity
+            isHome formation goalsScored goalsConceded result
+            halfTimeGoalsScored halfTimeGoalsConceded notes
+            matchAppearances_on_match {
+              isStarter minutesPlayed
+              player { id name jerseyNumber position pokemonType }
+            }
+            matchEvents_on_match(orderBy: { minute: ASC }) {
+              id eventType minute note
+              player { id name }
+              secondaryPlayer { id name }
             }
           }
         }
       `,
       {id: toolInput.id}
+    );
+  case "list_players":
+    return queryDataConnect(`
+        query ListPlayers {
+          players(orderBy: { jerseyNumber: ASC }) {
+            id name jerseyNumber position pokemonType
+          }
+        }
+      `);
+  case "get_player":
+    return queryDataConnect(
+      `
+        query GetPlayer($id: UUID!) {
+          player(id: $id) {
+            id name jerseyNumber position pokemonType
+            matchAppearances_on_player {
+              isStarter minutesPlayed
+              match { id date opposition result }
+            }
+            matchEvents_on_player {
+              id eventType minute note
+              match { id date opposition }
+            }
+          }
+        }
+      `,
+      {id: toolInput.id}
+    );
+  case "get_events_by_type":
+    return queryDataConnect(
+      `
+        query GetEventsByType($eventType: EventType!) {
+          matchEvents(
+            where: { eventType: { eq: $eventType } },
+            orderBy: { minute: ASC }
+          ) {
+            id minute note
+            match { id date opposition }
+            player { id name }
+            secondaryPlayer { id name }
+          }
+        }
+      `,
+      {eventType: toolInput.eventType}
+    );
+  case "get_player_events":
+    return queryDataConnect(
+      `
+        query GetPlayerEvents($playerId: UUID!) {
+          matchEvents(
+            where: { player: { id: { eq: $playerId } } },
+            orderBy: { minute: ASC }
+          ) {
+            id eventType minute note
+            match { id date opposition }
+            secondaryPlayer { id name }
+          }
+        }
+      `,
+      {playerId: toolInput.playerId}
     );
   default:
     return {error: `Unknown tool: ${toolName}`};
@@ -128,15 +279,13 @@ async function handleToolCall(
 }
 
 const SYSTEM_PROMPT =
-  "You are a helpful assistant for a Pokemon Football app " +
-  "called 'Grass vs Electric Derby'. You can query the database to " +
-  "answer questions about matches, players, goals, and throw-ins. " +
-  "When users ask about match data, use the available tools to fetch " +
-  "real information. Be friendly and informative in your responses." +
-  "\n\nIMPORTANT CONTEXT: The current match ID is " +
-  "bb785dd0-a9b2-48fb-bd01-f9b8c6eaa0a9. " +
-  "When the user asks about 'the match', 'this match', 'current match', " +
-  "or similar, use this ID without asking for clarification.";
+  "You are the assistant for the manager of Bulbascorers FC, " +
+  "a Pokemon-themed football team. All data in the database belongs " +
+  "to this team. The manager will ask you questions about their squad, " +
+  "match results, player performance, tactical patterns, and more. " +
+  "Use the available tools to query real match data before answering. " +
+  "Be concise, insightful, and back up observations with specific data " +
+  "(e.g. player names, minutes, match dates).";
 
 /**
  * Calls Claude with tools and handles the agentic loop.
