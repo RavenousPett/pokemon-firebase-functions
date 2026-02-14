@@ -291,18 +291,16 @@ const SYSTEM_PROMPT =
  * Calls Claude with tools and handles the agentic loop.
  * Streams text deltas directly to the HTTP response.
  * @param {Anthropic} anthropicClient - The Anthropic client instance.
- * @param {string} userMessage - The user's message.
+ * @param {Anthropic.MessageParam[]} initialMessages - The conversation history.
  * @param {Response} res - Express response to stream text into.
  * @return {Promise<void>}
  */
 async function callClaudeWithTools(
   anthropicClient: Anthropic,
-  userMessage: string,
+  initialMessages: Anthropic.MessageParam[],
   res: Response
 ): Promise<void> {
-  const messages: Anthropic.MessageParam[] = [
-    {role: "user", content: userMessage},
-  ];
+  const messages: Anthropic.MessageParam[] = [...initialMessages];
 
   // Agentic loop - keep processing until Claude is done
   let continueLoop = true;
@@ -356,9 +354,23 @@ export const calmMeDown = onRequest(
   {secrets: ["ANTHROPIC_API_KEY"], cors: true},
   async (req, res) => {
     const anthropicClient = new Anthropic();
+    const incomingMessages = req.body?.messages as
+      | Array<{role: string; content: string}>
+      | undefined;
     const userInputText = String(req.body?.userInputText || "");
 
-    if (!userInputText.trim()) {
+    // Build the messages array: prefer `messages` (multi-turn),
+    // fall back to `userInputText` (single turn / MOTD)
+    let initialMessages: Anthropic.MessageParam[];
+    if (incomingMessages && Array.isArray(incomingMessages) &&
+        incomingMessages.length > 0) {
+      initialMessages = incomingMessages.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      }));
+    } else if (userInputText.trim()) {
+      initialMessages = [{role: "user", content: userInputText}];
+    } else {
       res.set("Content-Type", "text/plain");
       res.send("Please enter a message.");
       return;
@@ -373,7 +385,7 @@ export const calmMeDown = onRequest(
         "X-Content-Type-Options": "nosniff",
       });
 
-      await callClaudeWithTools(anthropicClient, userInputText, res);
+      await callClaudeWithTools(anthropicClient, initialMessages, res);
       res.end();
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
