@@ -15,19 +15,22 @@
  */
 "use strict";
 
-import {onRequest} from "firebase-functions/v2/https";
+import { onRequest } from "firebase-functions/v2/https";
 import Anthropic from "@anthropic-ai/sdk";
-import {Response} from "express";
-import {initializeApp} from "firebase-admin/app";
-import {getDataConnect} from "firebase-admin/data-connect";
+import { Response } from "express";
+import { initializeApp } from "firebase-admin/app";
+import { getDataConnect } from "firebase-admin/data-connect";
 
 const app = initializeApp();
 
 // Initialize Data Connect with your service config
-const dataConnect = getDataConnect({
-  serviceId: "pokemon-football",
-  location: "us-east4",
-}, app);
+const dataConnect = getDataConnect(
+  {
+    serviceId: "pokemon-football",
+    location: "us-east4",
+  },
+  app,
+);
 
 // Tool definitions for Claude
 const tools: Anthropic.Tool[] = [
@@ -142,7 +145,7 @@ const tools: Anthropic.Tool[] = [
  */
 async function queryDataConnect(
   query: string,
-  variables: Record<string, unknown> = {}
+  variables: Record<string, unknown> = {},
 ): Promise<unknown> {
   const result = await dataConnect.executeGraphql(query, {
     variables,
@@ -159,11 +162,11 @@ async function queryDataConnect(
  */
 async function handleToolCall(
   toolName: string,
-  toolInput: Record<string, unknown>
+  toolInput: Record<string, unknown>,
 ): Promise<unknown> {
   switch (toolName) {
-  case "get_all_match_data":
-    return queryDataConnect(`
+    case "get_all_match_data":
+      return queryDataConnect(`
         query GetAllMatchData {
           matches(orderBy: { date: DESC }) {
             id date kickoffTime opposition venueName venueCity
@@ -181,8 +184,8 @@ async function handleToolCall(
           }
         }
       `);
-  case "list_matches":
-    return queryDataConnect(`
+    case "list_matches":
+      return queryDataConnect(`
         query ListMatches {
           matches(orderBy: { date: DESC }) {
             id date kickoffTime opposition venueName venueCity
@@ -191,9 +194,9 @@ async function handleToolCall(
           }
         }
       `);
-  case "get_match":
-    return queryDataConnect(
-      `
+    case "get_match":
+      return queryDataConnect(
+        `
         query GetMatch($id: UUID!) {
           match(id: $id) {
             id date kickoffTime opposition venueName venueCity
@@ -211,19 +214,19 @@ async function handleToolCall(
           }
         }
       `,
-      {id: toolInput.id}
-    );
-  case "list_players":
-    return queryDataConnect(`
+        { id: toolInput.id },
+      );
+    case "list_players":
+      return queryDataConnect(`
         query ListPlayers {
           players(orderBy: { jerseyNumber: ASC }) {
             id name jerseyNumber position pokemonType
           }
         }
       `);
-  case "get_player":
-    return queryDataConnect(
-      `
+    case "get_player":
+      return queryDataConnect(
+        `
         query GetPlayer($id: UUID!) {
           player(id: $id) {
             id name jerseyNumber position pokemonType
@@ -238,11 +241,11 @@ async function handleToolCall(
           }
         }
       `,
-      {id: toolInput.id}
-    );
-  case "get_events_by_type":
-    return queryDataConnect(
-      `
+        { id: toolInput.id },
+      );
+    case "get_events_by_type":
+      return queryDataConnect(
+        `
         query GetEventsByType($eventType: EventType!) {
           matchEvents(
             where: { eventType: { eq: $eventType } },
@@ -255,11 +258,11 @@ async function handleToolCall(
           }
         }
       `,
-      {eventType: toolInput.eventType}
-    );
-  case "get_player_events":
-    return queryDataConnect(
-      `
+        { eventType: toolInput.eventType },
+      );
+    case "get_player_events":
+      return queryDataConnect(
+        `
         query GetPlayerEvents($playerId: UUID!) {
           matchEvents(
             where: { player: { id: { eq: $playerId } } },
@@ -271,10 +274,10 @@ async function handleToolCall(
           }
         }
       `,
-      {playerId: toolInput.playerId}
-    );
-  default:
-    return {error: `Unknown tool: ${toolName}`};
+        { playerId: toolInput.playerId },
+      );
+    default:
+      return { error: `Unknown tool: ${toolName}` };
   }
 }
 
@@ -298,7 +301,7 @@ const SYSTEM_PROMPT =
 async function callClaudeWithTools(
   anthropicClient: Anthropic,
   initialMessages: Anthropic.MessageParam[],
-  res: Response
+  res: Response,
 ): Promise<void> {
   const messages: Anthropic.MessageParam[] = [...initialMessages];
 
@@ -323,7 +326,7 @@ async function callClaudeWithTools(
     // Check if Claude wants to use tools
     if (response.stop_reason === "tool_use") {
       const toolUseBlocks = response.content.filter(
-        (block): block is Anthropic.ToolUseBlock => block.type === "tool_use"
+        (block): block is Anthropic.ToolUseBlock => block.type === "tool_use",
       );
 
       // Execute all tool calls
@@ -331,7 +334,7 @@ async function callClaudeWithTools(
       for (const toolUse of toolUseBlocks) {
         const result = await handleToolCall(
           toolUse.name,
-          toolUse.input as Record<string, unknown>
+          toolUse.input as Record<string, unknown>,
         );
         toolResults.push({
           type: "tool_result",
@@ -341,8 +344,8 @@ async function callClaudeWithTools(
       }
 
       // Add assistant response and tool results to messages
-      messages.push({role: "assistant", content: response.content});
-      messages.push({role: "user", content: toolResults});
+      messages.push({ role: "assistant", content: response.content });
+      messages.push({ role: "user", content: toolResults });
     } else {
       // Claude is done - streaming already happened via the text event
       continueLoop = false;
@@ -351,25 +354,28 @@ async function callClaudeWithTools(
 }
 
 export const calmMeDown = onRequest(
-  {secrets: ["ANTHROPIC_API_KEY"], cors: true},
+  { secrets: ["ANTHROPIC_API_KEY"], cors: true },
   async (req, res) => {
     const anthropicClient = new Anthropic();
     const incomingMessages = req.body?.messages as
-      | Array<{role: string; content: string}>
+      | Array<{ role: string; content: string }>
       | undefined;
     const userInputText = String(req.body?.userInputText || "");
 
     // Build the messages array: prefer `messages` (multi-turn),
     // fall back to `userInputText` (single turn / MOTD)
     let initialMessages: Anthropic.MessageParam[];
-    if (incomingMessages && Array.isArray(incomingMessages) &&
-        incomingMessages.length > 0) {
+    if (
+      incomingMessages &&
+      Array.isArray(incomingMessages) &&
+      incomingMessages.length > 0
+    ) {
       initialMessages = incomingMessages.map((m) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
       }));
     } else if (userInputText.trim()) {
-      initialMessages = [{role: "user", content: userInputText}];
+      initialMessages = [{ role: "user", content: userInputText }];
     } else {
       res.set("Content-Type", "text/plain");
       res.send("Please enter a message.");
@@ -398,5 +404,5 @@ export const calmMeDown = onRequest(
         res.send(`Error: ${errMsg}`);
       }
     }
-  }
+  },
 );

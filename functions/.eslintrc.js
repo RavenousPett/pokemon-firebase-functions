@@ -30,5 +30,9 @@ module.exports = {
   rules: {
     // quotes and indent removed — Prettier owns all formatting.
     "import/no-unresolved": 0,
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      { varsIgnorePattern: "^_", argsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+    ],
   },
 };
