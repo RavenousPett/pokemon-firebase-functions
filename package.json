@@ -1,0 +1,16 @@
+{
+  "name": "pokemon-firebase-functions-root",
+  "private": true,
+  "scripts": {
+    "prepare": "husky",
+    "lint": "npm run lint --prefix functions",
+    "type-check": "npm run build --prefix functions"
+  },
+  "devDependencies": {
+    "husky": "^9.0.0",
+    "lint-staged": "^15.0.0"
+  },
+  "lint-staged": {
+    "functions/src/**/*.ts": "npm run lint --prefix functions"
+  }
+}

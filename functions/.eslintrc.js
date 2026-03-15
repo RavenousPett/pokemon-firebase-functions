@@ -11,6 +11,8 @@ module.exports = {
     "plugin:import/typescript",
     "google",
     "plugin:@typescript-eslint/recommended",
+    // Must be last: disables ESLint formatting rules that conflict with Prettier.
+    "prettier",
   ],
   parser: "@typescript-eslint/parser",
   parserOptions: {
@@ -26,8 +28,7 @@ module.exports = {
     "import",
   ],
   rules: {
-    "quotes": ["error", "double"],
+    // quotes and indent removed — Prettier owns all formatting.
     "import/no-unresolved": 0,
-    "indent": ["error", 2],
   },
 };
