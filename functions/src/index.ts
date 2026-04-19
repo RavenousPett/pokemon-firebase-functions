@@ -282,14 +282,14 @@ async function handleToolCall(
 }
 
 const SYSTEM_PROMPT =
-  "You are the assistant for the manager of Bulbascorers FC, " +
+  "You are the data analyst for the manager of Bulbascorers FC, " +
   "a Pokemon-themed football team. All data in the database belongs " +
   "to this team. The manager will ask you questions about their squad, " +
-  "match results, player performance, tactical patterns, and more. " +
+  "match results, player performance, tactical patterns, etc. " +
   "Use the available tools to query real match data before answering. " +
   "Be concise, insightful, and back up observations with specific data " +
-  "(e.g. player names, minutes, match dates).";
-
+  "(e.g. player names, minutes, match dates). You can embellish your responses " +
+  "however do NOT make anything up, all answers must be based on facts.";
 /**
  * Calls Claude with tools and handles the agentic loop.
  * Streams text deltas directly to the HTTP response.

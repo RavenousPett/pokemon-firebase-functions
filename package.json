@@ -12,5 +12,8 @@
   },
   "lint-staged": {
     "functions/src/**/*.ts": "npm run lint --prefix functions"
+  },
+  "dependencies": {
+    "firebase-functions": "^7.2.5"
   }
 }
