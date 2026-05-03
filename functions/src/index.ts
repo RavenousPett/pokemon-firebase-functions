@@ -6,12 +6,6 @@
  * You may obtain a copy of the License at
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an 'AS IS' BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
  */
 "use strict";
 
@@ -32,15 +26,33 @@ const dataConnect = getDataConnect(
   app,
 );
 
+// =====================================================================
+// Active team — single-team POC. The AI is currently scoped to one team.
+// Replace with a per-request value once we have multi-team / auth.
+// =====================================================================
+const ACTIVE_TEAM_ID = "2e000000-0000-0000-0000-000000000001";
+
 // Tool definitions for Claude
 const tools: Anthropic.Tool[] = [
   {
+    name: "get_team_info",
+    description:
+      "Get the active team's identity (club, team name, age group, " +
+      "season). Useful for grounding answers in who the team is.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
     name: "get_all_match_data",
     description:
-      "Get ALL matches with full detail including squad appearances " +
-      "and match events. This is the most comprehensive query — use it " +
-      "when you need to analyse patterns across matches, find top scorers, " +
-      "compare formations, or answer broad questions about the team.",
+      "Get every match the team has played (and any postponed/cancelled " +
+      "fixtures) with full detail: scores, quarter-by-quarter periods, " +
+      "events (goals, corners, fouls, cards, subs, etc.), squad notes, " +
+      "and awards. This is the most comprehensive query — use it when " +
+      "you need to analyse patterns across the season.",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -50,9 +62,9 @@ const tools: Anthropic.Tool[] = [
   {
     name: "list_matches",
     description:
-      "Get a quick overview of all matches with scores, results, " +
-      "formations, and venues. Does NOT include events or squad details. " +
-      "Use for a summary view.",
+      "Get a quick overview of every match (scores, venue, date, " +
+      "result, status). Does NOT include events, periods, or squad " +
+      "details. Use for a summary view.",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -62,8 +74,9 @@ const tools: Anthropic.Tool[] = [
   {
     name: "get_match",
     description:
-      "Get full detail for a specific match including squad " +
-      "appearances and all match events in minute order.",
+      "Get full detail for a specific match: scores, quarter periods, " +
+      "events (in period order), squad notes, awards, opp manager and " +
+      "referee.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -78,8 +91,8 @@ const tools: Anthropic.Tool[] = [
   {
     name: "list_players",
     description:
-      "Get all players in the squad with their jersey number, " +
-      "position, and Pokemon type.",
+      "Get all active players in the team's squad with their join " +
+      "date and position (if known).",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -89,8 +102,8 @@ const tools: Anthropic.Tool[] = [
   {
     name: "get_player",
     description:
-      "Get a specific player's full profile including all their " +
-      "match appearances and events across all matches.",
+      "Get a player's profile plus all their match appearances and " +
+      "events across the season.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -105,10 +118,11 @@ const tools: Anthropic.Tool[] = [
   {
     name: "get_events_by_type",
     description:
-      "Get all match events of a specific type across all matches. " +
-      "Valid types: GOAL_SCORED, GOAL_CONCEDED, THROW_IN, CORNER_TAKEN, " +
-      "CORNER_CONCEDED, YELLOW_CARD, RED_CARD, FOUL_COMMITTED, " +
-      "FOUL_SUFFERED, SUBSTITUTION_ON, SUBSTITUTION_OFF.",
+      "Get every event of a specific type across the season. " +
+      "Valid types: GOAL_SCORED, GOAL_CONCEDED, ASSIST, CORNER_TAKEN, " +
+      "CORNER_CONCEDED, THROW_IN, FREE_KICK_TAKEN, FREE_KICK_CONCEDED, " +
+      "SHOT_ON_TARGET, SHOT_OFF_TARGET, YELLOW_CARD, RED_CARD, " +
+      "FOUL_COMMITTED, FOUL_SUFFERED, SUBSTITUTION_ON, SUBSTITUTION_OFF.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -122,8 +136,7 @@ const tools: Anthropic.Tool[] = [
   },
   {
     name: "get_player_events",
-    description:
-      "Get all match events for a specific player across all matches.",
+    description: "Get all match events for a specific player.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -165,77 +178,139 @@ async function handleToolCall(
   toolInput: Record<string, unknown>,
 ): Promise<unknown> {
   switch (toolName) {
+    case "get_team_info":
+      return queryDataConnect(
+        `
+        query GetTeam($id: UUID!) {
+          team(id: $id) {
+            id name ageGroup season defaultPeriodFormat
+            club { id name shortName homeVenueName }
+          }
+        }
+      `,
+        { id: ACTIVE_TEAM_ID },
+      );
+
     case "get_all_match_data":
-      return queryDataConnect(`
-        query GetAllMatchData {
-          matches(orderBy: { date: DESC }) {
-            id date kickoffTime opposition venueName venueCity
-            isHome formation goalsScored goalsConceded result
-            halfTimeGoalsScored halfTimeGoalsConceded notes
-            matchAppearances_on_match {
-              isStarter minutesPlayed
-              player { id name jerseyNumber position pokemonType }
+      return queryDataConnect(
+        `
+        query GetAllMatchData($teamId: UUID!) {
+          matches(
+            where: { ourTeam: { id: { eq: $teamId } } },
+            orderBy: { date: DESC }
+          ) {
+            id date kickoffTime isHome
+            opposition oppositionClub
+            venueName venueDetails
+            status postponementReason periodFormat
+            ourGoals theirGoals result
+            oppositionManagerName refereeName notes
+            matchPeriods_on_match(orderBy: { periodNumber: ASC }) {
+              periodNumber label ourGoalsCumulative theirGoalsCumulative
             }
-            matchEvents_on_match(orderBy: { minute: ASC }) {
-              id eventType minute note
+            matchAppearances_on_match {
+              status isStarter minutesPlayed
+              player { id name jerseyNumber position }
+            }
+            matchEvents_on_match(orderBy: { periodNumber: ASC }) {
+              id eventType periodNumber minute note
               player { id name }
               secondaryPlayer { id name }
             }
+            matchAwards_on_match {
+              awardType
+              player { id name }
+            }
           }
         }
-      `);
+      `,
+        { teamId: ACTIVE_TEAM_ID },
+      );
+
     case "list_matches":
-      return queryDataConnect(`
-        query ListMatches {
-          matches(orderBy: { date: DESC }) {
-            id date kickoffTime opposition venueName venueCity
-            isHome formation goalsScored goalsConceded result
-            halfTimeGoalsScored halfTimeGoalsConceded notes
+      return queryDataConnect(
+        `
+        query ListMatches($teamId: UUID!) {
+          matches(
+            where: { ourTeam: { id: { eq: $teamId } } },
+            orderBy: { date: DESC }
+          ) {
+            id date kickoffTime isHome
+            opposition oppositionClub
+            venueName venueDetails
+            status postponementReason
+            ourGoals theirGoals result
+            notes
           }
         }
-      `);
+      `,
+        { teamId: ACTIVE_TEAM_ID },
+      );
+
     case "get_match":
       return queryDataConnect(
         `
         query GetMatch($id: UUID!) {
           match(id: $id) {
-            id date kickoffTime opposition venueName venueCity
-            isHome formation goalsScored goalsConceded result
-            halfTimeGoalsScored halfTimeGoalsConceded notes
-            matchAppearances_on_match {
-              isStarter minutesPlayed
-              player { id name jerseyNumber position pokemonType }
+            id date kickoffTime isHome
+            opposition oppositionClub
+            venueName venueDetails
+            status postponementReason periodFormat
+            ourGoals theirGoals result
+            oppositionManagerName oppositionManagerPhone
+            refereeName notes
+            ourTeam { id name ageGroup season club { id name } }
+            oppositionTeam { id name ageGroup }
+            matchPeriods_on_match(orderBy: { periodNumber: ASC }) {
+              periodNumber label ourGoalsCumulative theirGoalsCumulative
             }
-            matchEvents_on_match(orderBy: { minute: ASC }) {
-              id eventType minute note
+            matchAppearances_on_match {
+              status isStarter minutesPlayed
+              player { id name jerseyNumber position }
+            }
+            matchEvents_on_match(orderBy: { periodNumber: ASC }) {
+              id eventType periodNumber minute note
               player { id name }
               secondaryPlayer { id name }
+            }
+            matchAwards_on_match {
+              id awardType note
+              player { id name }
             }
           }
         }
       `,
         { id: toolInput.id },
       );
+
     case "list_players":
-      return queryDataConnect(`
-        query ListPlayers {
-          players(orderBy: { jerseyNumber: ASC }) {
-            id name jerseyNumber position pokemonType
+      return queryDataConnect(
+        `
+        query ListPlayers($teamId: UUID!) {
+          players(
+            where: { team: { id: { eq: $teamId } }, active: { eq: true } },
+            orderBy: { name: ASC }
+          ) {
+            id name jerseyNumber position joinedDate active
           }
         }
-      `);
+      `,
+        { teamId: ACTIVE_TEAM_ID },
+      );
+
     case "get_player":
       return queryDataConnect(
         `
         query GetPlayer($id: UUID!) {
           player(id: $id) {
-            id name jerseyNumber position pokemonType
+            id name jerseyNumber position joinedDate active
+            team { id name ageGroup season }
             matchAppearances_on_player {
-              isStarter minutesPlayed
+              status isStarter minutesPlayed
               match { id date opposition result }
             }
             matchEvents_on_player {
-              id eventType minute note
+              id eventType minute periodNumber note
               match { id date opposition }
             }
           }
@@ -243,32 +318,37 @@ async function handleToolCall(
       `,
         { id: toolInput.id },
       );
+
     case "get_events_by_type":
       return queryDataConnect(
         `
-        query GetEventsByType($eventType: EventType!) {
+        query GetEventsByType($teamId: UUID!, $eventType: EventType!) {
           matchEvents(
-            where: { eventType: { eq: $eventType } },
-            orderBy: { minute: ASC }
+            where: {
+              eventType: { eq: $eventType }
+              match: { ourTeam: { id: { eq: $teamId } } }
+            },
+            orderBy: { periodNumber: ASC }
           ) {
-            id minute note
+            id periodNumber minute note
             match { id date opposition }
             player { id name }
             secondaryPlayer { id name }
           }
         }
       `,
-        { eventType: toolInput.eventType },
+        { teamId: ACTIVE_TEAM_ID, eventType: toolInput.eventType },
       );
+
     case "get_player_events":
       return queryDataConnect(
         `
         query GetPlayerEvents($playerId: UUID!) {
           matchEvents(
             where: { player: { id: { eq: $playerId } } },
-            orderBy: { minute: ASC }
+            orderBy: { periodNumber: ASC }
           ) {
-            id eventType minute note
+            id eventType periodNumber minute note
             match { id date opposition }
             secondaryPlayer { id name }
           }
@@ -276,20 +356,31 @@ async function handleToolCall(
       `,
         { playerId: toolInput.playerId },
       );
+
     default:
       return { error: `Unknown tool: ${toolName}` };
   }
 }
 
 const SYSTEM_PROMPT =
-  "You are the data analyst for the manager of Bulbascorers FC, " +
-  "a Pokemon-themed football team. All data in the database belongs " +
-  "to this team. The manager will ask you questions about their squad, " +
-  "match results, player performance, tactical patterns, etc. " +
-  "Use the available tools to query real match data before answering. " +
-  "Be concise, insightful, and back up observations with specific data " +
-  "(e.g. player names, minutes, match dates). You can embellish your responses " +
-  "however do NOT make anything up, all answers must be based on facts.";
+  "You are the data analyst for a grassroots youth football team. " +
+  "All data in the database belongs to one team — call `get_team_info` " +
+  "first if you need the club/team/age-group/season identity. The " +
+  "manager will ask you questions about their squad, match results, " +
+  "player performance, tactical patterns, set pieces, discipline, " +
+  "etc. Use the available tools to query real match data before " +
+  "answering. Be concise, insightful, and back up observations with " +
+  "specific data (player names, dates, periods, minute counts where " +
+  "available). You can embellish your responses, however do NOT make " +
+  "anything up — all answers must be grounded in tool results. " +
+  "Notes on the data model: matches are split into periods (quarters " +
+  "for under-9s, halves for older age groups). Each match has " +
+  "cumulative period scores rather than minute-tagged events for " +
+  "every goal, so 'when did we score' usually means 'in which period'. " +
+  "Own goals by the opposition appear as `GOAL_SCORED` events with no " +
+  "player and a note. Awards (`MAN_OF_THE_MATCH`, " +
+  "`ASSIST_OF_THE_MATCH`) live in their own table.";
+
 /**
  * Calls Claude with tools and handles the agentic loop.
  * Streams text deltas directly to the HTTP response.
