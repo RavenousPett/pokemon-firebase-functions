@@ -121,7 +121,7 @@ const tools: Anthropic.Tool[] = [
       "Get every event of a specific type across the season. " +
       "Valid types: GOAL_SCORED, GOAL_CONCEDED, ASSIST, CORNER_TAKEN, " +
       "CORNER_CONCEDED, THROW_IN, FREE_KICK_TAKEN, FREE_KICK_CONCEDED, " +
-      "SHOT_ON_TARGET, SHOT_OFF_TARGET, YELLOW_CARD, RED_CARD, " +
+      "SHOT_ON_TARGET, SHOT_OFF_TARGET, SAVE, YELLOW_CARD, RED_CARD, " +
       "FOUL_COMMITTED, FOUL_SUFFERED, SUBSTITUTION_ON, SUBSTITUTION_OFF.",
     input_schema: {
       type: "object" as const,
@@ -378,7 +378,10 @@ const SYSTEM_PROMPT =
   "cumulative period scores rather than minute-tagged events for " +
   "every goal, so 'when did we score' usually means 'in which period'. " +
   "Own goals by the opposition appear as `GOAL_SCORED` events with no " +
-  "player and a note. Awards (`MAN_OF_THE_MATCH`, " +
+  "player and a note. `GOAL_CONCEDED` events track goals the opposition " +
+  "scored against us (player field is null — the scorer is unknown). " +
+  "`SAVE` events track goalkeeper saves (player may be null). " +
+  "Awards (`MAN_OF_THE_MATCH`, " +
   "`ASSIST_OF_THE_MATCH`) live in their own table.";
 
 /**
