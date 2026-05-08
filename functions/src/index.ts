@@ -381,8 +381,10 @@ const SYSTEM_PROMPT =
   "player and a note. `GOAL_CONCEDED` events track goals the opposition " +
   "scored against us (player field is null — the scorer is unknown). " +
   "`SAVE` events track goalkeeper saves (player may be null). " +
-  "Awards (`MAN_OF_THE_MATCH`, " +
-  "`ASSIST_OF_THE_MATCH`) live in their own table.";
+  "The `MAN_OF_THE_MATCH` award lives in the match awards table. " +
+  "Per-match assist recognition (when the coach singles out a player " +
+  "for an assist contribution) is captured in the match `notes` field " +
+  "as 'Assist credit: <player>'.";
 
 /**
  * Calls Claude with tools and handles the agentic loop.
