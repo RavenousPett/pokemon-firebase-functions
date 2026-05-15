@@ -209,7 +209,7 @@ async function handleToolCall(
               periodNumber label ourGoalsCumulative theirGoalsCumulative
             }
             matchAppearances_on_match {
-              status isStarter minutesPlayed
+              status isStarter minutesPlayed position
               player { id name jerseyNumber position }
             }
             matchEvents_on_match(orderBy: { periodNumber: ASC }) {
@@ -265,7 +265,7 @@ async function handleToolCall(
               periodNumber label ourGoalsCumulative theirGoalsCumulative
             }
             matchAppearances_on_match {
-              status isStarter minutesPlayed
+              status isStarter minutesPlayed position
               player { id name jerseyNumber position }
             }
             matchEvents_on_match(orderBy: { periodNumber: ASC }) {
@@ -306,7 +306,7 @@ async function handleToolCall(
             id name jerseyNumber position joinedDate active
             team { id name ageGroup season }
             matchAppearances_on_player {
-              status isStarter minutesPlayed
+              status isStarter minutesPlayed position
               match { id date opposition result }
             }
             matchEvents_on_player {
