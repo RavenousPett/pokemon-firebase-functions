@@ -148,6 +148,22 @@ const tools: Anthropic.Tool[] = [
       required: ["playerId"],
     },
   },
+  {
+    name: "list_competitions",
+    description:
+      "List every competition (league, cup, tournament) that has been " +
+      "set up in the database, with name, type, season, division, age " +
+      "group and organiser. Use this when asked things like 'what " +
+      "competitions are we in?', 'how did we do in the league vs cup?', " +
+      "or 'tell me about our tournament results' — then cross-reference " +
+      "against match data which exposes a `competition` object on each " +
+      "match. Note: friendly matches have competition = null.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 /**
@@ -203,6 +219,8 @@ async function handleToolCall(
             opposition oppositionClub
             venueName venueDetails
             status postponementReason periodFormat
+            formation
+            competition { id name type season division ageGroup organiser }
             ourGoals theirGoals result
             oppositionManagerName refereeName notes
             matchPeriods_on_match(orderBy: { periodNumber: ASC }) {
@@ -239,6 +257,8 @@ async function handleToolCall(
             opposition oppositionClub
             venueName venueDetails
             status postponementReason
+            formation
+            competition { id name type season division ageGroup }
             ourGoals theirGoals result
             notes
           }
@@ -256,6 +276,8 @@ async function handleToolCall(
             opposition oppositionClub
             venueName venueDetails
             status postponementReason periodFormat
+            formation
+            competition { id name type season division ageGroup organiser }
             ourGoals theirGoals result
             oppositionManagerName oppositionManagerPhone
             refereeName notes
@@ -357,6 +379,17 @@ async function handleToolCall(
         { playerId: toolInput.playerId },
       );
 
+    case "list_competitions":
+      return queryDataConnect(
+        `
+        query ListCompetitions {
+          competitions(orderBy: { season: DESC }) {
+            id name type season division ageGroup organiser
+          }
+        }
+      `,
+      );
+
     default:
       return { error: `Unknown tool: ${toolName}` };
   }
@@ -384,7 +417,28 @@ const SYSTEM_PROMPT =
   "The `MAN_OF_THE_MATCH` award lives in the match awards table. " +
   "Per-match assist recognition (when the coach singles out a player " +
   "for an assist contribution) is captured in the match `notes` field " +
-  "as 'Assist credit: <player>'.";
+  "as 'Assist credit: <player>'. " +
+  // --- Formation & competition (added v2) -----------------------
+  "Formations are stored on each match as enum values like `F_4_4_2`, " +
+  "`F_2_3_1`, `F_3_1_2`, etc. ALWAYS display formations in their " +
+  "natural form to the user: strip the `F_` prefix and replace " +
+  "underscores with hyphens — so `F_4_4_2` → '4-4-2' and `F_2_3_1` → " +
+  "'2-3-1'. The digits exclude the goalkeeper (e.g. 2+3+1=6 outfield " +
+  "for a 7-a-side U9 team). Formation may be null for matches where " +
+  "it was not captured (especially postponed matches). " +
+  "Each match may also have a `competition` object. The competition " +
+  "tells you the fixture's competitive context: `type` is LEAGUE, " +
+  "CUP, or TOURNAMENT; `name`, `season`, `division`, `ageGroup` and " +
+  "`organiser` give the full identity. CRITICAL RULE: a match where " +
+  "`competition` is null is a FRIENDLY — there is no separate fixture " +
+  "type field; the absence of a competition IS the friendly indicator. " +
+  "When asked about league form, cup form, friendlies or tournaments, " +
+  "segment matches accordingly. Tournament matches are usually short, " +
+  "single-day, multi-game festival events; treat per-game stats from " +
+  "tournaments with care when comparing to league/cup games. " +
+  "Use `list_competitions` to answer questions like 'what competitions " +
+  "are we in this season?' or to enumerate competitions before slicing " +
+  "match data by them.";
 
 /**
  * Calls Claude with tools and handles the agentic loop.
